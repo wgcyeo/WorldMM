@@ -4,7 +4,6 @@ Semantic Memory module for WorldMM.
 
 import json
 import logging
-import numpy as np
 import torch
 import torch.nn.functional as F
 import igraph as ig
@@ -70,9 +69,10 @@ class SemanticMemory:
     
     Attributes:
         embedding_model: Model for computing triple embeddings
-        triples: List of all loaded SemanticTripleEntry objects
-        indexed_entries: List of entries indexed up to indexed_time
+        timestamp_to_triples: Dict mapping timestamp to list of triples at that timestamp
+        indexed_entries: List of entries from the closest timestamp before indexed_time
         indexed_time: Timestamp boundary for indexed triples
+        indexed_timestamp: The specific timestamp of the indexed triples
         graph: igraph Graph with entities as vertices
         embeddings: Tensor of triple embeddings for indexed entries
     """
@@ -90,19 +90,19 @@ class SemanticMemory:
         self.embedding_model = embedding_model
         
         # Storage for triples
-        self.triples: List[SemanticTripleEntry] = []
         self.triple_id_to_entry: Dict[str, SemanticTripleEntry] = {}
+        self.timestamp_to_triples: Dict[int, List[SemanticTripleEntry]] = {}
+        self.available_timestamps: List[int] = []  # Sorted list of timestamps
         
         # Indexed state
         self.indexed_entries: List[SemanticTripleEntry] = []
         self.indexed_time: int = 0
+        self.indexed_timestamp: int = 0  # The specific timestamp that was indexed
         
         # Graph and embeddings for retrieval
         self.graph: Optional[ig.Graph] = None
         self.embeddings: Optional[torch.Tensor] = None
-        self.index_to_pos: Dict[str, int] = {}
         self.triple_to_entities: Dict[str, Tuple[str, str]] = {}
-        self.entity_to_vertex: Dict[str, int] = {}
     
     def load_triples_from_file(self, file_path: str) -> None:
         """
@@ -137,6 +137,7 @@ class SemanticMemory:
             timestamp = int(timestamp_str)
             triples = content.get("consolidated_semantic_triples", [])
             
+            timestamp_entries = []
             for idx, triple in enumerate(triples):
                 if len(triple) < 3:
                     logger.warning(f"Skipping invalid triple at {timestamp_str}[{idx}]: {triple}")
@@ -151,36 +152,46 @@ class SemanticMemory:
                     object=triple[2] if len(triple) > 2 else "",
                     timestamp=timestamp,
                 )
-                self.triples.append(entry)
                 self.triple_id_to_entry[triple_id] = entry
-        
-        # Sort triples by timestamp for efficient indexing
-        self.triples.sort(key=lambda e: e.timestamp)
-        logger.info(f"Loaded {len(self.triples)} semantic triples")
+                timestamp_entries.append(entry)
+            
+            if timestamp_entries:
+                self.timestamp_to_triples[timestamp] = timestamp_entries
+            
+        self.available_timestamps = sorted(self.timestamp_to_triples.keys())
+        logger.info(f"Loaded semantic triples across {len(self.available_timestamps)} timestamps")
     
     def index(self, until_time: int) -> None:
         """
-        Index semantic triples up to the specified timestamp.
+        Index semantic triples from the closest timestamp before or at the specified time.
         
         This builds the entity graph and computes embeddings for triples
-        with timestamp <= until_time.
+        from the most recent consolidated semantic memory timestamp <= until_time.
         
         Args:
-            until_time: Timestamp boundary - index all triples with timestamp <= this value
+            until_time: Timestamp boundary - index triples from closest timestamp <= this value
         """
-        # Skip if already indexed beyond this time
-        if self.indexed_time >= until_time:
-            logger.debug(f"Already indexed up to {self.indexed_time}, skipping index for {until_time}")
+        # Find the closest timestamp before or at until_time
+        closest_timestamp = None
+        for ts in reversed(self.available_timestamps):
+            if ts <= until_time:
+                closest_timestamp = ts
+                break
+        
+        if closest_timestamp is None:
+            logger.debug(f"No timestamp found up to {until_time}")
             return
         
-        # Get entries to index
-        entries_to_index = [
-            entry for entry in self.triples
-            if entry.timestamp <= until_time
-        ]
+        # Skip if already indexed this exact timestamp
+        if self.indexed_timestamp == closest_timestamp:
+            logger.debug(f"Already indexed timestamp {closest_timestamp}, skipping")
+            return
+        
+        # Get entries from this specific timestamp
+        entries_to_index = self.timestamp_to_triples.get(closest_timestamp, [])
         
         if not entries_to_index:
-            logger.debug(f"No entries to index up to {until_time}")
+            logger.debug(f"No entries at timestamp {closest_timestamp}")
             return
         
         # Collect all unique entities
@@ -199,17 +210,15 @@ class SemanticMemory:
         self.graph = ig.Graph()
         entity_list = list(all_entities)
         self.graph.add_vertices(entity_list)
-        
-        # Create entity to vertex index mapping
-        self.entity_to_vertex = {entity: i for i, entity in enumerate(entity_list)}
+        entity_to_vertex = {entity: i for i, entity in enumerate(entity_list)}
         
         # Add edges for each triple (connecting subject to object)
         edges_to_add = []
         for entry in entries_to_index:
             subj, obj = self.triple_to_entities[entry.id]
-            if subj and obj and subj in self.entity_to_vertex and obj in self.entity_to_vertex:
-                subj_vertex = self.entity_to_vertex[subj]
-                obj_vertex = self.entity_to_vertex[obj]
+            if subj and obj and subj in entity_to_vertex and obj in entity_to_vertex:
+                subj_vertex = entity_to_vertex[subj]
+                obj_vertex = entity_to_vertex[obj]
                 if subj_vertex != obj_vertex:
                     edges_to_add.append((subj_vertex, obj_vertex))
         
@@ -217,27 +226,19 @@ class SemanticMemory:
             self.graph.add_edges(edges_to_add)
         
         # Compute embeddings for triples
-        all_embeddings = []
-        self.index_to_pos = {}
-        
-        for pos, entry in enumerate(entries_to_index):
-            self.index_to_pos[entry.id] = pos
-            
-            # Compute embedding
-            emb = self.embedding_model.encode_text(entry.text)
-            if len(emb.shape) == 2:
-                emb = emb[0]
-            all_embeddings.append(emb)
+        all_texts = [entry.text for entry in entries_to_index]
+        all_embeddings = self.embedding_model.encode_text(all_texts)
         
         self.embeddings = torch.tensor(
-            np.array(all_embeddings), 
+            all_embeddings, 
             dtype=torch.float32, 
             device="cuda" if torch.cuda.is_available() else "cpu"
         )
         self.indexed_entries = entries_to_index
         self.indexed_time = until_time
+        self.indexed_timestamp = closest_timestamp
         
-        logger.info(f"Indexed {len(entries_to_index)} semantic triples up to {until_time}")
+        logger.info(f"Indexed {len(entries_to_index)} semantic triples from timestamp {closest_timestamp} (query time: {until_time})")
     
     def retrieve(
         self,
@@ -368,22 +369,21 @@ class SemanticMemory:
         self.embeddings = None
         self.indexed_entries = []
         self.indexed_time = 0
-        self.index_to_pos = {}
+        self.indexed_timestamp = 0
         self.triple_to_entities = {}
-        self.entity_to_vertex = {}
         logger.info("Index reset - graph and embeddings cleared")
     
     def get_indexed_time(self) -> str:
         """Get the current indexed time boundary as human-readable string."""
         return _transform_timestamp(str(self.indexed_time))
     
+    def get_indexed_timestamp(self) -> str:
+        """Get the specific timestamp that was indexed as human-readable string."""
+        return _transform_timestamp(str(self.indexed_timestamp)) if self.indexed_timestamp > 0 else "Not indexed"
+    
     def get_triple_by_id(self, triple_id: str) -> Optional[SemanticTripleEntry]:
         """Get a triple entry by its ID."""
         return self.triple_id_to_entry.get(triple_id)
-    
-    def get_triples_count(self) -> int:
-        """Get the total number of loaded triples."""
-        return len(self.triples)
     
     def get_indexed_count(self) -> int:
         """Get the number of indexed triples."""

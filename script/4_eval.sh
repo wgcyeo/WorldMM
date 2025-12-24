@@ -36,7 +36,7 @@ LOG_DIR=".log/eval/${PERSON}"
 mkdir -p "$LOG_DIR"
 LOG_FILE="$LOG_DIR/eval_${RESP_MODEL//-/_}_$TIMESTAMP.log"
 
-echo -e "${BLUE}Running EgoLifeQA evaluation: $PERSON with $MODEL${NC}"
+echo -e "${BLUE}Running EgoLifeQA evaluation: $PERSON with Retriever $RET_MODEL and Responder $RESP_MODEL${NC}"
 python eval/eval.py \
     --subject "$PERSON" \
     --retriever-model "$RET_MODEL" \

@@ -173,7 +173,7 @@ class EpisodicMemory:
                 text=entry.get("text", ""),
                 start_time=str(entry.get("start_time", "")),
                 end_time=str(entry.get("end_time", "")),
-                date=entry.get("date", ""),
+                date=str(entry.get("date", "")),
                 granularity=granularity,
                 video_path=entry.get("video_path"),
             )
