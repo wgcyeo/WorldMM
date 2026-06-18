@@ -1,6 +1,6 @@
 # 🌏 WorldMM: Dynamic Multimodal Memory Agent for Long Video Reasoning
 
-<a href="https://arxiv.org/abs/2512.02425"><img src="https://img.shields.io/badge/arXiv-2512.02425-b31b1b.svg" alt="arXiv"></a>
+<a href="https://arxiv.org/abs/2512.02425"><img src="https://img.shields.io/badge/arXiv-2512.02425-b31b1b.svg?logo=arxiv&logoColor=white" alt="arXiv"></a>
 <a href="https://worldmm.github.io"><img src="https://img.shields.io/badge/Project-Page-green.svg" alt="Project Page"></a>
 <a href="https://www.python.org/downloads/release/python-3100/"><img src="https://img.shields.io/badge/python-3.10+-blue.svg" alt="Python 3.10+"></a>
 
@@ -75,6 +75,9 @@ bash script/3_build_memory.sh --step [episodic|semantic|visual]
 --model <name>      # LLM model for memory construction (default: gpt-5-mini)
 ```
 
+> [!TIP]
+> To skip memory construction and use the prebuilt WorldMM EgoLife memory metadata, download it from [wgcyeo/WorldMM-EgoLife](https://huggingface.co/datasets/wgcyeo/WorldMM-EgoLife) into `output/metadata`.
+
 ## Evaluation
 
 Run evaluation on EgoLifeQA with:
@@ -104,11 +107,13 @@ For detailed information about each step, please refer to the scripts located in
 
 If you find WorldMM helpful, please consider citing our paper:
 ```bibtex
-@article{yeo2025worldmm,
-  title   = {WorldMM: Dynamic Multimodal Memory Agent for Long Video Reasoning},
-  author  = {Yeo, Woongyeong and Kim, Kangsan and Yoon, Jaehong and Hwang, Sung Ju},
-  journal = {arXiv preprint arXiv:2512.02425},
-  year    = {2025}
+@inproceedings{yeo2026worldmm,
+  title     = {WorldMM: Dynamic Multimodal Memory Agent for Long Video Reasoning},
+  author    = {Yeo, Woongyeong and Kim, Kangsan and Yoon, Jaehong and Hwang, Sung Ju},
+  booktitle = {Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
+  month     = {June},
+  year      = {2026},
+  pages     = {25599-25609}
 }
 ```
 
