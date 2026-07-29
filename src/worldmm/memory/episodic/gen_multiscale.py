@@ -242,30 +242,32 @@ def _summarize_level(
     date: str = "DAY1",
 ) -> list:
     window_batches = []
-    batch: list = []
-    current_window_start = None
-
+    items_by_date: Dict[str, list] = {}
     for item in input_data:
-        start_sec = _time_to_seconds(item["start_time"])
+        item_date = str(item.get("date") or date)
+        items_by_date.setdefault(item_date, []).append(item)
 
-        if current_window_start is None:
-            current_window_start = start_sec
+    for item_date, items in items_by_date.items():
+        batch: list = []
+        current_window_start = None
 
-        if start_sec < current_window_start + window_seconds:
-            batch.append(item)
-        else:
-            if batch:
-                window_batches.append(
-                    (batch, current_window_start, current_window_start + window_seconds)
-                )
+        for item in sorted(items, key=lambda entry: _time_to_seconds(entry["start_time"])):
+            start_sec = _time_to_seconds(item["start_time"])
 
-            current_window_start = (start_sec // window_seconds) * window_seconds
-            batch = [item]
+            if current_window_start is None:
+                current_window_start = start_sec
 
-    if batch and current_window_start is not None:
-        window_batches.append(
-            (batch, current_window_start, current_window_start + window_seconds)
-        )
+            if start_sec < current_window_start + window_seconds:
+                batch.append(item)
+            else:
+                if batch:
+                    window_batches.append((batch, current_window_start, current_window_start + window_seconds, item_date))
+
+                current_window_start = (start_sec // window_seconds) * window_seconds
+                batch = [item]
+
+        if batch and current_window_start is not None:
+            window_batches.append((batch, current_window_start, current_window_start + window_seconds, item_date))
 
     if not window_batches:
         return []
@@ -280,11 +282,13 @@ def _summarize_level(
                 window_start,
                 window_end,
                 system_message,
-                date,
+                item_date,
                 llm,
                 window_index,
             ): window_index
-            for window_index, (batch, window_start, window_end) in enumerate(window_batches)
+            for window_index, (batch, window_start, window_end, item_date) in enumerate(
+                window_batches
+            )
         }
         progress_bar = tqdm(
             as_completed(future_to_index),
@@ -299,6 +303,12 @@ def _summarize_level(
             if result:
                 results_by_index[window_index] = result
         progress_bar.close()
+
+    if len(results_by_index) != len(window_batches):
+        raise RuntimeError(
+            f"Failed to summarize {len(window_batches) - len(results_by_index)} "
+            f"of {len(window_batches)} windows"
+        )
 
     return [results_by_index[idx] for idx in sorted(results_by_index)]
 
@@ -325,7 +335,7 @@ def gen_multiscale(
         windows: Window sizes in seconds for each level.
         granularity_names: Output filenames (without .json) for each level.
         perspective: "egocentric" for first-person or "general" for third-person prompts.
-        date: Date label for all entries.
+        date: Fallback date label for entries without one.
     """
     assert len(windows) == len(granularity_names)
     prompts = _PROMPTS.get(perspective, _PROMPTS["general"])

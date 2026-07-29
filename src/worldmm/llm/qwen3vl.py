@@ -101,7 +101,7 @@ class Qwen3VLModel:
             self.model_name,
             torch_dtype=torch.bfloat16,
             attn_implementation="flash_attention_2",
-            device_map="cuda:1",
+            device_map="auto",
         )
         
         # Load processor

@@ -1,16 +1,22 @@
 from dataclasses import dataclass
-from pydantic import BaseModel, field_validator
-from typing import List
+from pydantic import BaseModel, field_validator, model_validator
+from typing import Any, List
 
 class SemanticRawOutput(BaseModel):
     semantic_triples: List[List[str]]
     episodic_evidence: List[List[int]]
 
-    @field_validator("semantic_triples")
-    def validate_semantic_triples(cls, v):
-        if not all(len(triple) == 3 for triple in v):
-            raise ValueError("Each semantic triple must contain exactly 3 elements.", v)
-        return v
+    @model_validator(mode="before")
+    @classmethod
+    def filter_invalid_semantic_triples(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        triples = data.get("semantic_triples")
+        evidence = data.get("episodic_evidence")
+        if not isinstance(triples, list) or not isinstance(evidence, list):
+            return data
+        valid_indices = [i for i, triple in enumerate(triples) if isinstance(triple, list) and len(triple) == 3]
+        return {**data, "semantic_triples": [triples[i] for i in valid_indices], "episodic_evidence": [evidence[i] if i < len(evidence) else [] for i in valid_indices]}
     
     # @field_validator("episodic_evidence")
     # def validate_evidence_length(cls, v, info):

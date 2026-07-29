@@ -177,8 +177,8 @@ def extract_time_info(segment_entries: List[Dict]) -> Tuple[str | None, str | No
     if not start_times or not end_times:
         return None, None
 
-    start_time = str(min(start_times)) + "00"
-    end_time = str(max(end_times)) + "00"
+    start_time = f"{int(min(start_times)):06d}00"
+    end_time = f"{int(max(end_times)):06d}00"
     return start_time, end_time
 
 
@@ -282,7 +282,7 @@ def process_sync_files(sync_dir: str, output_file: str, person: str, overwrite: 
             continue
 
     print(f"\nSorting {len(all_captions)} captions by date and start time...")
-    all_captions.sort(key=lambda x: (extract_day_number(x["date"]), x["start_time"]))
+    all_captions.sort(key=lambda x: (extract_day_number(x["date"]), int(x["start_time"])))
     print("Saving output file...")
     os.makedirs(os.path.dirname(output_file), exist_ok=True)
     with open(output_file, "w", encoding="utf-8") as f:

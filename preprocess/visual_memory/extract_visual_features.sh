@@ -10,7 +10,7 @@
 #   ./extract_visual_features.sh --person A1_JAKE --gpu 0
 ###############################################################################
 
-set -e  # Exit on error
+set -euo pipefail
 
 # Array to store background process IDs (declared early for trap)
 declare -a pids=()
@@ -94,8 +94,7 @@ if [ "$NUM_SPLITS" -eq 1 ]; then
     echo "Log file: $LOG_FILE"
     CUDA_VISIBLE_DEVICES=${GPUS[0]} python preprocess/visual_memory/extract_visual_features.py \
         --person "$PERSON" \
-        --num_frames "$NUM_FRAMES" \
-        --device cuda 2>&1 | tee "$LOG_FILE"
+        --num_frames "$NUM_FRAMES" 2>&1 | tee "$LOG_FILE"
     
     echo ""
     echo "✓ Processing completed successfully!"
